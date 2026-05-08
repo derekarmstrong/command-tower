@@ -24,7 +24,7 @@ const theme = createTheme({
 });
 
 export const metadata: Metadata = {
-  title: 'Command Tower',
+  title: 'Better Binder',
   description: 'Magic: The Gathering collection manager',
 };
 

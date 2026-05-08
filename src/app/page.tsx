@@ -54,7 +54,7 @@ export default function LandingPage() {
         <IconCards size={48} style={{ color: 'var(--mantine-color-violet-6)' }} />
       </Group>
       <Title order={1} size={rem(48)} ta="center" mb="sm">
-        Command Tower
+        Better Binder
       </Title>
       <Text size="xl" c="dimmed" ta="center" mb={40} maw={600} mx="auto">
         Your personal Magic: The Gathering collection manager. Browse, search, and organize your cards with ease.

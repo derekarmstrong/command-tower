@@ -42,7 +42,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
               <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
               <IconCards size={28} style={{ color: 'var(--mantine-color-violet-6)' }} />
               <Text component={Link} href={user ? '/dashboard' : '/'} size="xl" fw={700} c="violet.6" style={{ textDecoration: 'none' }}>
-                Command Tower
+                Better Binder
               </Text>
             </Group>
             <Group visibleFrom="sm" gap="xs">

@@ -107,7 +107,8 @@ export default function PublicCollectionPage({ params }: { params: { id: string 
       if (hasC && regular.length === 0) {
         if (c.colors && c.colors.length > 0 && !(c.colors.length === 1 && c.colors[0] === 'C')) return false;
       } else if (regular.length > 0) {
-        if (!regular.every((col) => c.colors?.includes(col))) return false;
+        if (!c.colors || c.colors.length === 0) return false;
+        if (!c.colors.every((col) => regular.includes(col))) return false;
       }
     }
     if (cmcRange[0] > 0 || cmcRange[1] < 15) {

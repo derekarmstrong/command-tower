@@ -136,7 +136,7 @@ export default function DashboardPage() {
           if (hasC && regular.length === 0) {
             query = query.or('colors.eq.{},colors.eq.{C}');
           } else if (regular.length > 0) {
-            query = query.contains('colors', regular).containedBy('colors', regular);
+            query = query.containedBy('colors', regular).overlaps('colors', regular);
           }
         }
         if (cmcRange[0] > 0 || cmcRange[1] < 15) {

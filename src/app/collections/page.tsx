@@ -35,7 +35,7 @@ export default function BrowseCollectionsPage() {
   return (
     <Container size="xl" py="md">
       <Group mb="lg">
-        <IconWorld size={32} style={{ color: 'var(--mantine-color-violet-6)' }} />
+        <IconWorld size={32} style={{ color: 'var(--mantine-color-brand-6)' }} />
         <Title order={2}>Browse Collections</Title>
       </Group>
 
@@ -62,7 +62,7 @@ export default function BrowseCollectionsPage() {
               style={{ cursor: 'pointer', textDecoration: 'none' }}
             >
               <Stack gap="sm">
-                <Text fw={600} size="lg" c="violet.6" lineClamp={1}>
+                <Text fw={600} size="lg" c="brand.6" lineClamp={1}>
                   {col.display_name || col.name}
                 </Text>
                 <Group gap={6}>

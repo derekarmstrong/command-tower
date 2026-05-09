@@ -51,7 +51,7 @@ export default function LandingPage() {
   return (
     <Container size="lg" py={80}>
       <Group justify="center" mb={50}>
-        <IconCards size={48} style={{ color: 'var(--mantine-color-violet-6)' }} />
+        <IconCards size={48} style={{ color: 'var(--mantine-color-brand-6)' }} />
       </Group>
       <Title order={1} size={rem(48)} ta="center" mb="sm">
         Better Binder

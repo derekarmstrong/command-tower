@@ -15,6 +15,7 @@ import { supabase } from '@/lib/supabase';
 import { normalizeCardName } from '@/lib/normalizeCardName';
 import { ManaSymbol } from '@/components/ManaSymbol';
 import { SetSymbol } from '@/components/SetSymbol';
+import { getImageUris } from '@/lib/scryfallImage';
 
 interface SetInfo {
   set_code: string;
@@ -202,17 +203,23 @@ function CategorySection({ category, filterQuery }: { category: CategoryResult; 
   return (
     <Paper withBorder radius="md" key={category.tag}>
       <Box p="md">
-        <Group justify="space-between" onClick={() => setExpanded(!expanded)} style={{ cursor: 'pointer' }}>
-          <Group gap="xs">
-            {expanded ? <IconChevronDown size={18} /> : <IconChevronRight size={18} />}
-            <Title order={4}>{category.header}</Title>
-          </Group>
+        <UnstyledButton
+          onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
+          style={{ width: '100%', cursor: 'pointer' }}
+        >
+          <Group justify="space-between">
+            <Group gap="xs">
+              {expanded ? <IconChevronDown size={18} /> : <IconChevronRight size={18} />}
+              <Title order={4}>{category.header}</Title>
+            </Group>
           <Group gap="xs">
             <Badge size="lg" color="green">{category.matchedCards.length} owned</Badge>
             <Badge size="lg" color="gray">{category.missingCards.length} missing</Badge>
-            <Badge size="lg" color="violet">{category.totalCards} total</Badge>
+            <Badge size="lg" color="brand">{category.totalCards} total</Badge>
           </Group>
-        </Group>
+          </Group>
+        </UnstyledButton>
       </Box>
       {expanded && (
         <Box p="md">
@@ -232,8 +239,8 @@ function CategorySection({ category, filterQuery }: { category: CategoryResult; 
                         <ThHeader column="name" sortBy={ownedSortBy} sortDir={ownedSortDir} onSort={handleOwnedSort}>Card Name</ThHeader>
                         <ThHeader column="synergy" sortBy={ownedSortBy} sortDir={ownedSortDir} onSort={handleOwnedSort}>Synergy</ThHeader>
                         <Table.Th>Mana</Table.Th>
-                        <Table.Th>Price</Table.Th>
-                        <Table.Th>Buy</Table.Th>
+                        <Table.Th>TCG</Table.Th>
+                        <Table.Th>CM</Table.Th>
                         <ThHeader column="owned" sortBy={ownedSortBy} sortDir={ownedSortDir} onSort={handleOwnedSort}>Owned</ThHeader>
                         <Table.Th>Sets</Table.Th>
                       </Table.Tr>
@@ -247,19 +254,25 @@ function CategorySection({ category, filterQuery }: { category: CategoryResult; 
                             {card.mana_cost ? <ManaSymbol cost={card.mana_cost} size={14} /> : null}
                           </Table.Td>
                           <Table.Td>
-                            {card.prices?.usd ? (
+                            {card.prices?.usd && card.purchase_uris?.tcgplayer ? (
+                              <Anchor href={card.purchase_uris.tcgplayer} target="_blank" rel="noopener noreferrer" size="sm" fw={600} c="green" onClick={(e) => e.stopPropagation()}>
+                                ${card.prices.usd}
+                              </Anchor>
+                            ) : card.prices?.usd ? (
                               <Text size="sm" fw={600} c="green">${card.prices.usd}</Text>
-                            ) : card.prices?.usd_foil ? (
-                              <Text size="sm" c="dimmed">${card.prices.usd_foil}</Text>
                             ) : (
                               <Text c="dimmed" size="sm">—</Text>
                             )}
                           </Table.Td>
                           <Table.Td>
-                            {card.purchase_uris?.tcgplayer && (
-                              <Anchor href={card.purchase_uris.tcgplayer} target="_blank" size="xs" onClick={(e) => e.stopPropagation()}>
-                                TCG
+                            {card.prices?.eur && card.purchase_uris?.cardmarket ? (
+                              <Anchor href={card.purchase_uris.cardmarket} target="_blank" rel="noopener noreferrer" size="sm" onClick={(e) => e.stopPropagation()}>
+                                €{card.prices.eur}
                               </Anchor>
+                            ) : card.prices?.eur ? (
+                              <Text size="sm">€{card.prices.eur}</Text>
+                            ) : (
+                              <Text c="dimmed" size="sm">—</Text>
                             )}
                           </Table.Td>
                           <Table.Td><Badge variant="light" color="green">{card.totalOwned}</Badge></Table.Td>
@@ -291,8 +304,8 @@ function CategorySection({ category, filterQuery }: { category: CategoryResult; 
                       <Table.Tr>
                         <ThHeader column="name" sortBy={missingSortBy} sortDir={missingSortDir} onSort={handleMissingSort}>Card Name</ThHeader>
                         <ThHeader column="synergy" sortBy={missingSortBy} sortDir={missingSortDir} onSort={handleMissingSort}>Synergy</ThHeader>
-                        <Table.Th>Price</Table.Th>
-                        <Table.Th>Buy</Table.Th>
+                        <Table.Th>TCG</Table.Th>
+                        <Table.Th>CM</Table.Th>
                       </Table.Tr>
                     </Table.Thead>
                     <Table.Tbody>
@@ -303,26 +316,32 @@ function CategorySection({ category, filterQuery }: { category: CategoryResult; 
                           </Table.Td>
                           <Table.Td>{(card.synergy * 100).toFixed(1)}%</Table.Td>
                           <Table.Td>
-                            {card.prices?.usd ? (
+                            {card.prices?.usd && card.purchase_uris?.tcgplayer ? (
+                              <Anchor href={card.purchase_uris.tcgplayer} target="_blank" rel="noopener noreferrer" size="sm" fw={600} c="green" onClick={(e) => e.stopPropagation()}>
+                                ${card.prices.usd}
+                              </Anchor>
+                            ) : card.prices?.usd ? (
                               <Text size="sm" fw={600} c="green">${card.prices.usd}</Text>
-                            ) : card.prices?.usd_foil ? (
-                              <Text size="sm" c="dimmed">${card.prices.usd_foil}</Text>
                             ) : (
                               <Text c="dimmed" size="sm">—</Text>
                             )}
                           </Table.Td>
                           <Table.Td>
-                            {card.purchase_uris?.tcgplayer && (
-                              <Anchor href={card.purchase_uris.tcgplayer} target="_blank" size="xs" onClick={(e) => e.stopPropagation()}>
-                                TCG
+                            {card.prices?.eur && card.purchase_uris?.cardmarket ? (
+                              <Anchor href={card.purchase_uris.cardmarket} target="_blank" rel="noopener noreferrer" size="sm" onClick={(e) => e.stopPropagation()}>
+                                €{card.prices.eur}
                               </Anchor>
+                            ) : card.prices?.eur ? (
+                              <Text size="sm">€{card.prices.eur}</Text>
+                            ) : (
+                              <Text c="dimmed" size="sm">—</Text>
                             )}
                           </Table.Td>
                         </Table.Tr>
-                      ))}
-                    </Table.Tbody>
-                  </Table>
-                </ScrollArea.Autosize>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </ScrollArea.Autosize>
               </Paper>
             </Grid.Col>
           </Grid>
@@ -341,6 +360,8 @@ export default function RecommendationsPage() {
   const [result, setResult] = useState<RecommendationsResult | null>(null);
   const [stats, setStats] = useState<{ totalRecommendations: number; totalOwned: number; totalMissing: number } | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [commanderImageUrl, setCommanderImageUrl] = useState<string | null>(null);
+  const [commanderCard, setCommanderCard] = useState<{ name: string; type_line: string | null; mana_cost: string | null } | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const combobox = useCombobox({ onDropdownClose: () => combobox.resetSelectedOption() });
 
@@ -586,6 +607,25 @@ export default function RecommendationsPage() {
         totalMissing += cat.missingCards.length;
       }
       setStats({ totalRecommendations: totalRecs, totalOwned, totalMissing });
+
+      const { data: commanderCards } = await supabase
+        .from('cards')
+        .select('id, name, type_line, mana_cost, image_uris')
+        .eq('name', commanderName)
+        .eq('lang', 'en')
+        .limit(1);
+      if (commanderCards?.[0]) {
+        const uris = getImageUris(commanderCards[0]);
+        setCommanderImageUrl(uris?.large || uris?.normal || null);
+        setCommanderCard({
+          name: commanderCards[0].name,
+          type_line: commanderCards[0].type_line,
+          mana_cost: commanderCards[0].mana_cost,
+        });
+      } else {
+        setCommanderImageUrl(null);
+        setCommanderCard(null);
+      }
     } catch (err) {
       setFetchError(err instanceof Error ? err.message : 'Failed to fetch recommendations');
     } finally {
@@ -601,70 +641,133 @@ export default function RecommendationsPage() {
           <IconBulb size={40} />
         </Group>
 
-        <Paper withBorder p="xl" radius="md">
-          <Title order={3} mb="md">Search Commander</Title>
-          <Text size="sm" c="dimmed" mb="md">
-            Enter a commander name to fetch personalized card recommendations from EDHRec and see which ones you own.
-          </Text>
+        {result && commanderImageUrl ? (
+          <Grid>
+            <Grid.Col span={{ base: 12, md: 3 }}>
+              <Image
+                src={commanderImageUrl}
+                alt={commanderName}
+                w="100%"
+                fit="contain"
+                radius="md"
+                style={{ maxWidth: 300 }}
+              />
+            </Grid.Col>
+            <Grid.Col span={{ base: 12, md: 9 }}>
+              <Stack gap="md">
+                <Paper withBorder p="md" radius="md">
+                  <Group gap="sm" align="flex-end">
+                    <div style={{ flex: 1 }}>
+                      <Combobox store={combobox} withinPortal={false} size="md" onOptionSubmit={handleSelect}>
+                        <Combobox.Target>
+                          <TextInput
+                            placeholder="e.g. Ms. Bumbleflower"
+                            value={commanderName}
+                            onChange={(e) => handleSearchChange(e.currentTarget.value)}
+                            leftSection={<IconSearch size={16} />}
+                            style={{ width: '100%' }}
+                            onKeyDown={(e) => e.key === 'Enter' && handleFetch()}
+                          />
+                        </Combobox.Target>
+                        <Combobox.Dropdown>
+                          <Combobox.Options mah={250} style={{ overflowY: 'auto' }}>
+                            {suggestions.length === 0 && commanderName.trim() && (
+                              <Combobox.Option value="_no_results" disabled>
+                                <Text size="sm" c="dimmed">No suggestions</Text>
+                              </Combobox.Option>
+                            )}
+                            {suggestions.map((name) => (
+                              <Combobox.Option key={name} value={name}>{name}</Combobox.Option>
+                            ))}
+                          </Combobox.Options>
+                        </Combobox.Dropdown>
+                      </Combobox>
+                    </div>
+                    <Button onClick={handleFetch} disabled={!commanderName.trim() || loading || !user} loading={loading} miw={180}>
+                      Fetch Recommendations
+                    </Button>
+                  </Group>
+                </Paper>
 
-          <Group gap="sm" align="flex-end">
-            <div style={{ flex: 1 }}>
-              <Combobox store={combobox} withinPortal={false} size="md" onOptionSubmit={handleSelect}>
-                <Combobox.Target>
-                  <TextInput
-                    placeholder="e.g. Ms. Bumbleflower"
-                    value={commanderName}
-                    onChange={(e) => handleSearchChange(e.currentTarget.value)}
-                    leftSection={<IconSearch size={16} />}
-                    style={{ width: '100%' }}
-                    onKeyDown={(e) => e.key === 'Enter' && handleFetch()}
-                  />
-                </Combobox.Target>
-                <Combobox.Dropdown>
-                  <Combobox.Options mah={250} style={{ overflowY: 'auto' }}>
-                    {suggestions.length === 0 && commanderName.trim() && (
-                      <Combobox.Option value="_no_results" disabled>
-                        <Text size="sm" c="dimmed">No suggestions</Text>
-                      </Combobox.Option>
-                    )}
-                    {suggestions.map((name) => (
-                      <Combobox.Option key={name} value={name}>{name}</Combobox.Option>
-                    ))}
-                  </Combobox.Options>
-                </Combobox.Dropdown>
-              </Combobox>
-            </div>
-            <Button onClick={handleFetch} disabled={!commanderName.trim() || loading || !user} loading={loading} miw={180}>
-              Fetch Recommendations
-            </Button>
-          </Group>
-        </Paper>
+                {stats && (
+                  <Grid>
+                    <Grid.Col span={4}>
+                      <Paper withBorder p="md" radius="md">
+                        <Text size="sm" c="dimmed">Total Recommendations</Text>
+                        <Title order={2}>{stats.totalRecommendations}</Title>
+                      </Paper>
+                    </Grid.Col>
+                    <Grid.Col span={4}>
+                      <Paper withBorder p="md" radius="md">
+                        <Text size="sm" c="dimmed">Owned</Text>
+                        <Title order={2} c="green">{stats.totalOwned}</Title>
+                      </Paper>
+                    </Grid.Col>
+                    <Grid.Col span={4}>
+                      <Paper withBorder p="md" radius="md">
+                        <Text size="sm" c="dimmed">Missing</Text>
+                        <Title order={2} c="red">{stats.totalMissing}</Title>
+                      </Paper>
+                    </Grid.Col>
+                  </Grid>
+                )}
+
+                {commanderCard && (
+                  <Paper withBorder p="sm" radius="md">
+                    <Group gap="xs">
+                      <Text fw={600} size="sm">{commanderCard.name}</Text>
+                      {commanderCard.mana_cost && <ManaSymbol cost={commanderCard.mana_cost} size={16} />}
+                      {commanderCard.type_line && (
+                        <Text size="xs" c="dimmed">{commanderCard.type_line}</Text>
+                      )}
+                    </Group>
+                  </Paper>
+                )}
+              </Stack>
+            </Grid.Col>
+          </Grid>
+        ) : (
+          <Paper withBorder p="xl" radius="md">
+            <Title order={3} mb="md">Search Commander</Title>
+            <Text size="sm" c="dimmed" mb="md">
+              Enter a commander name to fetch personalized card recommendations from EDHRec and see which ones you own.
+            </Text>
+            <Group gap="sm" align="flex-end">
+              <div style={{ flex: 1 }}>
+                <Combobox store={combobox} withinPortal={false} size="md" onOptionSubmit={handleSelect}>
+                  <Combobox.Target>
+                    <TextInput
+                      placeholder="e.g. Ms. Bumbleflower"
+                      value={commanderName}
+                      onChange={(e) => handleSearchChange(e.currentTarget.value)}
+                      leftSection={<IconSearch size={16} />}
+                      style={{ width: '100%' }}
+                      onKeyDown={(e) => e.key === 'Enter' && handleFetch()}
+                    />
+                  </Combobox.Target>
+                  <Combobox.Dropdown>
+                    <Combobox.Options mah={250} style={{ overflowY: 'auto' }}>
+                      {suggestions.length === 0 && commanderName.trim() && (
+                        <Combobox.Option value="_no_results" disabled>
+                          <Text size="sm" c="dimmed">No suggestions</Text>
+                        </Combobox.Option>
+                      )}
+                      {suggestions.map((name) => (
+                        <Combobox.Option key={name} value={name}>{name}</Combobox.Option>
+                      ))}
+                    </Combobox.Options>
+                  </Combobox.Dropdown>
+                </Combobox>
+              </div>
+              <Button onClick={handleFetch} disabled={!commanderName.trim() || loading || !user} loading={loading} miw={180}>
+                Fetch Recommendations
+              </Button>
+            </Group>
+          </Paper>
+        )}
 
         {fetchError && (
           <Alert icon={<IconAlertCircle size={16} />} title="Error" color="red">{fetchError}</Alert>
-        )}
-
-        {stats && (
-          <Grid>
-            <Grid.Col span={4}>
-              <Paper withBorder p="md" radius="md">
-                <Text size="sm" c="dimmed">Total Recommendations</Text>
-                <Title order={2}>{stats.totalRecommendations}</Title>
-              </Paper>
-            </Grid.Col>
-            <Grid.Col span={4}>
-              <Paper withBorder p="md" radius="md">
-                <Text size="sm" c="dimmed">Owned</Text>
-                <Title order={2} c="green">{stats.totalOwned}</Title>
-              </Paper>
-            </Grid.Col>
-            <Grid.Col span={4}>
-              <Paper withBorder p="md" radius="md">
-                <Text size="sm" c="dimmed">Missing</Text>
-                <Title order={2} c="red">{stats.totalMissing}</Title>
-              </Paper>
-            </Grid.Col>
-          </Grid>
         )}
 
         {result && (

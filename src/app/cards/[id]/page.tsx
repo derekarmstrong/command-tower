@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
   Container, Title, Text, Group, Badge, Image, Center,
   Loader, Button, Paper, Grid, SimpleGrid, Stack, Anchor, Divider,
+  Table, ScrollArea, HoverCard,
 } from '@mantine/core';
 import { IconArrowLeft } from '@tabler/icons-react';
 import { supabase } from '@/lib/supabase';
@@ -15,6 +16,7 @@ import { rarityColor } from '@/components/rarityColor';
 import { getImageUris } from '@/lib/scryfallImage';
 
 interface FullCardData extends ScryfallCard {
+  oracle_id?: string | null;
   oracle_text?: string | null;
   power?: string | null;
   toughness?: string | null;
@@ -51,6 +53,21 @@ export default function CardDetailPage() {
   const router = useRouter();
   const [card, setCard] = useState<FullCardData | null>(null);
   const [status, setStatus] = useState<FetchStatus>('loading');
+  const [versions, setVersions] = useState<any[]>([]);
+  const [totalVersions, setTotalVersions] = useState(0);
+  const [versionsLoading, setVersionsLoading] = useState(false);
+
+  const loadVersionsPage = useCallback(async (oracleId: string, offset: number) => {
+    setVersionsLoading(true);
+    const { data, count } = await supabase
+      .from('cards')
+      .select('id, set, set_name, rarity, prices, purchase_uris, image_uris, released_at, collector_number', { count: 'exact' })
+      .eq('oracle_id', oracleId)
+      .order('released_at', { ascending: false })
+      .range(offset, offset + 9);
+    setVersionsLoading(false);
+    return { data: data || [], count: count || 0 };
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -71,22 +88,34 @@ export default function CardDetailPage() {
         setCard(data as FullCardData);
         setStatus('found');
 
-        try {
-          const res = await fetch(`https://api.scryfall.com/cards/${id}`);
-          if (res.ok) {
-            const scryfall = await res.json();
-            setCard((prev) => (prev ? { ...prev, ...scryfall } : prev));
-          }
-        } catch {
-          // Scryfall enrichment is optional
-        }
+        const versionsPromise = data.oracle_id
+          ? loadVersionsPage(data.oracle_id, 0).then(({ data: v, count: c }) => {
+              setVersions(v);
+              setTotalVersions(c);
+            })
+          : Promise.resolve();
+
+        const scryfallPromise = fetch(`https://api.scryfall.com/cards/${id}`)
+          .then((res) => res.ok ? res.json() : null)
+          .then((scryfall) => {
+            if (scryfall) setCard((prev) => (prev ? { ...prev, ...scryfall } : prev));
+          })
+          .catch(() => {});
+
+        await Promise.all([versionsPromise, scryfallPromise]);
       } catch {
         setStatus('error');
       }
     }
 
     fetchCard();
-  }, [id]);
+  }, [id, loadVersionsPage]);
+
+  const handleLoadMore = useCallback(async () => {
+    if (!card?.oracle_id) return;
+    const { data } = await loadVersionsPage(card.oracle_id, versions.length);
+    setVersions((prev) => [...prev, ...data]);
+  }, [card?.oracle_id, versions.length, loadVersionsPage]);
 
   if (status === 'loading') {
     return (
@@ -194,6 +223,23 @@ export default function CardDetailPage() {
                       <Text size="xs"><Text span fw={500}>EUR:</Text> €{card.prices.eur}</Text>
                     )}
                   </SimpleGrid>
+                </Paper>
+              )}
+              {(card.purchase_uris?.tcgplayer || card.purchase_uris?.cardmarket) && (
+                <Paper withBorder p="sm">
+                  <Text fw={600} size="sm" mb={4}>Buy</Text>
+                  <Group gap="xs">
+                    {card.purchase_uris?.tcgplayer && (
+                      <Anchor href={card.purchase_uris.tcgplayer} target="_blank" rel="noopener noreferrer" size="sm">
+                        TCGPlayer ↗
+                      </Anchor>
+                    )}
+                    {card.purchase_uris?.cardmarket && (
+                      <Anchor href={card.purchase_uris.cardmarket} target="_blank" rel="noopener noreferrer" size="sm">
+                        CardMarket ↗
+                      </Anchor>
+                    )}
+                  </Group>
                 </Paper>
               )}
             </Stack>
@@ -307,10 +353,151 @@ export default function CardDetailPage() {
 
               {card.scryfall_uri && (
                 <Group mt="sm">
-                  <Anchor href={card.scryfall_uri} target="_blank" size="sm">
+                  <Anchor href={card.scryfall_uri} target="_blank" rel="noopener noreferrer" size="sm">
                     View on Scryfall ↗
                   </Anchor>
                 </Group>
+              )}
+
+              {versions.length > 1 && (
+                <>
+                  <Divider />
+                  <Text fw={600} size="sm" mb={4}>All Versions ({versions.length} of {totalVersions})</Text>
+                  <ScrollArea.Autosize mah={400} type="hover">
+                    <Table striped highlightOnHover>
+                      <Table.Thead style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--mantine-color-body)' }}>
+                        <Table.Tr>
+                          <Table.Th>Set</Table.Th>
+                          <Table.Th>Rarity</Table.Th>
+                          <Table.Th>TCG</Table.Th>
+                          <Table.Th>CM</Table.Th>
+                        </Table.Tr>
+                      </Table.Thead>
+                      <Table.Tbody>
+                        {versions.map((v) => (
+                          <Table.Tr
+                            key={v.id}
+                            style={{ cursor: 'pointer' }}
+                            onClick={() => router.push(`/cards/${v.id}`)}
+                          >
+                            <Table.Td>
+                              <HoverCard width={180} shadow="md" openDelay={300} closeDelay={100}>
+                                <HoverCard.Target>
+                                  <Group gap={6} wrap="nowrap">
+                                    <SetSymbol setCode={v.set} size={20} />
+                                    <Text size="sm">{v.set_name}</Text>
+                                    <Text size="xs" c="dimmed">#{v.collector_number}</Text>
+                                  </Group>
+                                </HoverCard.Target>
+                                <HoverCard.Dropdown p={0} style={{ border: 'none', borderRadius: 4, overflow: 'hidden' }}>
+                                  <Image
+                                    src={getImageUris({ id: v.id, image_uris: v.image_uris })?.normal || ''}
+                                    alt={v.set_name}
+                                    w={180}
+                                    fit="contain"
+                                    loading="lazy"
+                                  />
+                                </HoverCard.Dropdown>
+                              </HoverCard>
+                            </Table.Td>
+                            <Table.Td>
+                              <Badge size="sm" variant="light" color={rarityColor(v.rarity)}>
+                                {v.rarity}
+                              </Badge>
+                            </Table.Td>
+                            <Table.Td>
+                              {v.prices?.usd && v.purchase_uris?.tcgplayer ? (
+                                <Anchor href={v.purchase_uris.tcgplayer} target="_blank" rel="noopener noreferrer" size="sm" fw={600} c="green" onClick={(e) => e.stopPropagation()}>
+                                  ${v.prices.usd}
+                                </Anchor>
+                              ) : v.prices?.usd ? (
+                                <Text size="sm" fw={600} c="green">${v.prices.usd}</Text>
+                              ) : (
+                                <Text c="dimmed" size="sm">—</Text>
+                              )}
+                            </Table.Td>
+                            <Table.Td>
+                              {v.prices?.eur && v.purchase_uris?.cardmarket ? (
+                                <Anchor href={v.purchase_uris.cardmarket} target="_blank" rel="noopener noreferrer" size="sm" onClick={(e) => e.stopPropagation()}>
+                                  €{v.prices.eur}
+                                </Anchor>
+                              ) : v.prices?.eur ? (
+                                <Text size="sm">€{v.prices.eur}</Text>
+                              ) : (
+                                <Text c="dimmed" size="sm">—</Text>
+                              )}
+                            </Table.Td>
+                          </Table.Tr>
+                        ))}
+                      </Table.Tbody>
+                    </Table>
+                  </ScrollArea.Autosize>
+                  {versions.length < totalVersions && (
+                    <Group justify="center" mt="sm">
+                      <Button
+                        variant="light"
+                        size="xs"
+                        onClick={handleLoadMore}
+                        loading={versionsLoading}
+                      >
+                        View More
+                      </Button>
+                    </Group>
+                  )}
+                </>
+              )}
+
+              {card.all_parts && card.all_parts.length > 0 && (
+                <>
+                  <Divider />
+                  <Text fw={600} size="sm" mb={4}>Related Cards</Text>
+                  <ScrollArea.Autosize mah={400} type="hover">
+                    <Table striped highlightOnHover>
+                      <Table.Thead style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--mantine-color-body)' }}>
+                        <Table.Tr>
+                          <Table.Th>Card</Table.Th>
+                          <Table.Th>Relationship</Table.Th>
+                        </Table.Tr>
+                      </Table.Thead>
+                      <Table.Tbody>
+                        {card.all_parts
+                          .filter((part) => part.id !== id && part.name !== card?.name)
+                          .map((part) => (
+                          <Table.Tr
+                            key={part.id}
+                            style={{ cursor: 'pointer' }}
+                            onClick={() => router.push(`/cards/${part.id}`)}
+                          >
+                            <Table.Td>
+                              <HoverCard width={180} shadow="md" openDelay={300} closeDelay={100}>
+                                <HoverCard.Target>
+                                  <Text size="sm" fw={500}>{part.name}</Text>
+                                </HoverCard.Target>
+                                <HoverCard.Dropdown p={0} style={{ border: 'none', borderRadius: 4, overflow: 'hidden' }}>
+                                  <Image
+                                    src={getImageUris({ id: part.id, image_uris: null })?.normal || ''}
+                                    alt={part.name}
+                                    w={180}
+                                    fit="contain"
+                                    loading="lazy"
+                                  />
+                                </HoverCard.Dropdown>
+                              </HoverCard>
+                              {part.type_line && (
+                                <Text size="xs" c="dimmed">{part.type_line}</Text>
+                              )}
+                            </Table.Td>
+                            <Table.Td>
+                              <Badge size="sm" variant="light" color="gray">
+                                {part.component.replace(/_/g, ' ')}
+                              </Badge>
+                            </Table.Td>
+                          </Table.Tr>
+                        ))}
+                      </Table.Tbody>
+                    </Table>
+                  </ScrollArea.Autosize>
+                </>
               )}
             </Stack>
           </Grid.Col>

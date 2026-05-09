@@ -143,7 +143,7 @@ export default function CollectionPage() {
   const filterCard = useCallback((c: ScryfallCard) => {
     if (search && !c.name.toLowerCase().includes(search.toLowerCase())) return false;
     if (rarities.length > 0 && !rarities.includes(c.rarity)) return false;
-    if (types.length > 0 && !types.some((t) => (c.type_line || '').toLowerCase().includes(t.toLowerCase()))) return false;
+    if (types.length > 0 && !types.every((t) => (c.type_line || '').toLowerCase().includes(t.toLowerCase()))) return false;
     if (sets.length > 0 && !sets.includes(c.set)) return false;
     if (colors.length > 0) {
       const hasC = colors.includes('C');
@@ -647,10 +647,10 @@ export default function CollectionPage() {
                       height: 30,
                       borderRadius: '50%',
                       border: colors.includes(c)
-                        ? '2px solid var(--mantine-color-violet-6)'
+                        ? '2px solid var(--mantine-color-brand-6)'
                         : '2px solid var(--mantine-color-gray-4)',
                       background: colors.includes(c)
-                        ? 'var(--mantine-color-violet-0)'
+                        ? 'var(--mantine-color-brand-0)'
                         : 'transparent',
                       cursor: 'pointer',
                       display: 'inline-flex',

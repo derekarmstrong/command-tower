@@ -1,13 +1,29 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AppShell, Group, Text, Button, ActionIcon, useMantineColorScheme, Burger, Stack } from '@mantine/core';
+import { AppShell, Group, Text, Button, ActionIcon, useMantineColorScheme, Burger, Stack, UnstyledButton } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { IconCards, IconSun, IconMoon, IconLogin, IconUserPlus, IconDashboard, IconSettings, IconLogout, IconArchive, IconBulb, IconWorld } from '@tabler/icons-react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { Notifications } from '@mantine/notifications';
+
+function NavButton({ href, icon, label, onClick }: { href: string; icon: React.ReactNode; label: string; onClick?: () => void }) {
+  const pathname = usePathname();
+  const isActive = pathname === href;
+  return (
+    <Button
+      component={Link}
+      href={href}
+      variant={isActive ? 'light' : 'subtle'}
+      leftSection={icon}
+      onClick={onClick}
+    >
+      {label}
+    </Button>
+  );
+}
 
 export function ClientLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, signOut } = useAuth();
@@ -30,6 +46,27 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <>
+      <UnstyledButton
+        component="a"
+        href="#main-content"
+        style={{
+          position: 'absolute',
+          left: -9999,
+          zIndex: 1000,
+          padding: '8px 16px',
+          background: 'var(--mantine-color-brand-6)',
+          color: '#fff',
+          fontWeight: 700,
+          borderRadius: '0 0 8px 8px',
+        }}
+        styles={{
+          root: {
+            '&:focus': { left: 16, top: 8 },
+          },
+        }}
+      >
+        Skip to main content
+      </UnstyledButton>
       <Notifications />
       <AppShell
         header={{ height: 60 }}
@@ -39,20 +76,20 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
         <AppShell.Header>
           <Group h="100%" px="md" justify="space-between">
             <Group>
-              <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
-              <IconCards size={28} style={{ color: 'var(--mantine-color-violet-6)' }} />
-              <Text component={Link} href={user ? '/dashboard' : '/'} size="xl" fw={700} c="violet.6" style={{ textDecoration: 'none' }}>
+              <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" aria-label="Toggle navigation menu" />
+              <IconCards size={28} style={{ color: 'var(--mantine-color-brand-6)' }} />
+              <Text component={Link} href={user ? '/dashboard' : '/'} size="xl" fw={700} c="brand.6" style={{ textDecoration: 'none' }}>
                 Better Binder
               </Text>
             </Group>
             <Group visibleFrom="sm" gap="xs">
               {hydrated && !loading && user ? (
                 <>
-                  <Button component={Link} href="/dashboard" variant="subtle" leftSection={<IconDashboard size={16} />}>All Cards</Button>
-                  <Button component={Link} href="/collection" variant="subtle" leftSection={<IconArchive size={16} />}>My Collection</Button>
-                  <Button component={Link} href="/collections" variant="subtle" leftSection={<IconWorld size={16} />}>Browse Collections</Button>
-                  <Button component={Link} href="/recommendations" variant="subtle" leftSection={<IconBulb size={16} />}>Recommendations</Button>
-                  <Button component={Link} href="/settings" variant="subtle" leftSection={<IconSettings size={16} />}>Settings</Button>
+                  <NavButton href="/dashboard" icon={<IconDashboard size={16} />} label="All Cards" />
+                  <NavButton href="/collection" icon={<IconArchive size={16} />} label="My Collection" />
+                  <NavButton href="/collections" icon={<IconWorld size={16} />} label="Browse Collections" />
+                  <NavButton href="/recommendations" icon={<IconBulb size={16} />} label="Recommendations" />
+                  <NavButton href="/settings" icon={<IconSettings size={16} />} label="Settings" />
                   <Button variant="subtle" color="gray" onClick={handleSignOut} leftSection={<IconLogout size={16} />}>Sign Out</Button>
                 </>
               ) : hydrated && !loading && !user ? (
@@ -62,7 +99,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
                 </>
               ) : null}
               {hydrated && (
-                <ActionIcon variant="subtle" size="lg" onClick={handleToggleTheme}>
+                <ActionIcon variant="subtle" size="lg" onClick={handleToggleTheme} aria-label={`Switch to ${colorScheme === 'dark' ? 'light' : 'dark'} mode`}>
                   {colorScheme === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />}
                 </ActionIcon>
               )}
@@ -73,11 +110,11 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
           <Stack gap="xs">
             {hydrated && !loading && user ? (
               <>
-                  <Button component={Link} href="/dashboard" variant="subtle" justify="flex-start" leftSection={<IconDashboard size={16} />} onClick={toggle}>All Cards</Button>
-                <Button component={Link} href="/collection" variant="subtle" justify="flex-start" leftSection={<IconArchive size={16} />} onClick={toggle}>My Collection</Button>
-                <Button component={Link} href="/collections" variant="subtle" justify="flex-start" leftSection={<IconWorld size={16} />} onClick={toggle}>Browse Collections</Button>
-                <Button component={Link} href="/recommendations" variant="subtle" justify="flex-start" leftSection={<IconBulb size={16} />} onClick={toggle}>Recommendations</Button>
-                <Button component={Link} href="/settings" variant="subtle" justify="flex-start" leftSection={<IconSettings size={16} />} onClick={toggle}>Settings</Button>
+                <NavButton href="/dashboard" icon={<IconDashboard size={16} />} label="All Cards" onClick={toggle} />
+                <NavButton href="/collection" icon={<IconArchive size={16} />} label="My Collection" onClick={toggle} />
+                <NavButton href="/collections" icon={<IconWorld size={16} />} label="Browse Collections" onClick={toggle} />
+                <NavButton href="/recommendations" icon={<IconBulb size={16} />} label="Recommendations" onClick={toggle} />
+                <NavButton href="/settings" icon={<IconSettings size={16} />} label="Settings" onClick={toggle} />
                 <Button variant="subtle" color="gray" justify="flex-start" leftSection={<IconLogout size={16} />} onClick={() => { toggle(); handleSignOut(); }}>Sign Out</Button>
               </>
             ) : hydrated && !loading && !user ? (
@@ -93,7 +130,12 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
             )}
           </Stack>
         </AppShell.Navbar>
-        <AppShell.Main>{children}</AppShell.Main>
+        <AppShell.Main id="main-content">{children}</AppShell.Main>
+        <AppShell.Footer p="sm">
+          <Text size="xs" c="dimmed" ta="center">
+            This app is unofficial Fan Content permitted under the Fan Content Policy. Not approved/endorsed by Wizards. Portions of the materials used are property of Wizards of the Coast. &copy;Wizards of the Coast LLC.
+          </Text>
+        </AppShell.Footer>
       </AppShell>
     </>
   );

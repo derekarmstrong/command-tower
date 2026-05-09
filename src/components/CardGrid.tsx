@@ -1,6 +1,6 @@
 'use client';
 
-import { Card, Image, Text, Group, Center, SimpleGrid, Skeleton, Anchor, Badge } from '@mantine/core';
+import { Card, Image, Text, Group, Center, SimpleGrid, Skeleton, Anchor } from '@mantine/core';
 import { SetSymbolTooltip } from './SetSymbolTooltip';
 import type { ScryfallCard } from '@/types/card';
 import type { GroupedCard } from '@/lib/groupCards';
@@ -34,6 +34,14 @@ export function CardGrid({ cards, groupedCards, fetching, skeletonCount = 8 }: C
 
   const grouped = groupedCards ?? groupCardsByName(cards);
 
+  if (grouped.length === 0) {
+    return (
+      <Center py={80}>
+        <Text c="dimmed" size="lg">No cards to display</Text>
+      </Center>
+    );
+  }
+
   return (
     <SimpleGrid cols={{ base: 1, xs: 2, sm: 3, md: 4 }} spacing="md">
       {grouped.map((card) => {
@@ -49,8 +57,17 @@ export function CardGrid({ cards, groupedCards, fetching, skeletonCount = 8 }: C
             padding="md"
             radius="md"
             withBorder
+            role="link"
+            tabIndex={0}
+            aria-label={`View ${card.name} details`}
             style={{ cursor: 'pointer' }}
             onClick={() => router.push(`/cards/${primary.id}`)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                router.push(`/cards/${primary.id}`);
+              }
+            }}
           >
             <Card.Section>
               {imageUri ? (
@@ -65,7 +82,7 @@ export function CardGrid({ cards, groupedCards, fetching, skeletonCount = 8 }: C
                 <Center h={200}><Text c="dimmed" size="sm">No image</Text></Center>
               )}
             </Card.Section>
-            <Text fw={500} size="sm" lineClamp={1} mt="xs">{card.name}</Text>
+            <Text fw={500} size="sm" lineClamp={1} mt="xs" title={card.name}>{card.name}</Text>
             <Group gap={4} mt={4}>
               {card.printings.map((p) => (
                 <Group key={p.id} gap={2} wrap="nowrap">
@@ -77,17 +94,20 @@ export function CardGrid({ cards, groupedCards, fetching, skeletonCount = 8 }: C
               ))}
             </Group>
             <Group gap="xs" mt={4}>
-              {primary.prices?.usd && (
-                <Text size="sm" fw={600} c="green">${primary.prices.usd}</Text>
-              )}
-              {primary.prices?.usd_foil && (
-                <Text size="xs" c="dimmed">F: ${primary.prices.usd_foil}</Text>
-              )}
-              {primary.purchase_uris?.tcgplayer && (
-                <Anchor href={primary.purchase_uris.tcgplayer} target="_blank" size="xs" onClick={(e) => e.stopPropagation()}>
-                  Buy
+              {primary.prices?.usd && primary.purchase_uris?.tcgplayer ? (
+                <Anchor href={primary.purchase_uris.tcgplayer} target="_blank" rel="noopener noreferrer" size="sm" fw={600} c="green" onClick={(e) => e.stopPropagation()}>
+                  ${primary.prices.usd}
                 </Anchor>
-              )}
+              ) : primary.prices?.usd ? (
+                <Text size="sm" fw={600} c="green">${primary.prices.usd}</Text>
+              ) : null}
+              {primary.prices?.eur && primary.purchase_uris?.cardmarket ? (
+                <Anchor href={primary.purchase_uris.cardmarket} target="_blank" rel="noopener noreferrer" size="sm" onClick={(e) => e.stopPropagation()}>
+                  €{primary.prices.eur}
+                </Anchor>
+              ) : primary.prices?.eur ? (
+                <Text size="sm">€{primary.prices.eur}</Text>
+              ) : null}
             </Group>
           </Card>
         );

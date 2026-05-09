@@ -1,7 +1,7 @@
 import { createTheme, virtualColor } from '@mantine/core';
 
 export const theme = createTheme({
-  primaryColor: 'violet',
+  primaryColor: 'brand',
   colors: {
     dark: [
       '#C1C2C5',

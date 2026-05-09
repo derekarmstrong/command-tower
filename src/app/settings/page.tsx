@@ -47,7 +47,7 @@ export default function SettingsPage() {
       <Paper withBorder p="lg" radius="md" mb="md">
         <Title order={4} mb="md">Profile</Title>
         <Group>
-          <Avatar radius="xl" size="lg" color="violet">
+          <Avatar radius="xl" size="lg" color="brand">
             <IconUser size={28} />
           </Avatar>
           <Stack gap={0}>

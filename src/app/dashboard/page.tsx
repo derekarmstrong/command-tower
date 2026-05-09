@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Container, TextInput, Group, Text, Center,
   Pagination, Loader, SegmentedControl, MultiSelect,
-  RangeSlider, UnstyledButton, Divider, Checkbox, Paper, Grid,
+  RangeSlider, UnstyledButton, Divider, Checkbox, Paper, Grid, Title,
 } from '@mantine/core';
 import { IconSearch, IconGridDots, IconList } from '@tabler/icons-react';
 import { useAuth } from '@/lib/auth';
@@ -124,8 +124,9 @@ export default function DashboardPage() {
           query = query.in('rarity', rarities);
         }
         if (types.length > 0) {
-          const orTypes = types.map((t) => `type_line.ilike.%${t}%`).join(',');
-          query = query.or(orTypes);
+          for (const t of types) {
+            query = query.ilike('type_line', `%${t}%`);
+          }
         }
         if (sets.length > 0) {
           query = query.in('set', sets);
@@ -214,6 +215,7 @@ export default function DashboardPage() {
 
   return (
     <Container size="xl" py="md">
+      <Title order={2} mb="md">All Cards</Title>
       <Grid>
         <Grid.Col span={{ base: 12, sm: 3 }} style={{ paddingLeft: 0 }}>
           <Paper withBorder p="md" pos="sticky" top={16}>
@@ -251,18 +253,20 @@ export default function DashboardPage() {
             <Text size="sm" fw={500} mb={4}>Color</Text>
             <Group gap={4} mb="md">
               {COLOR_OPTIONS.map((c) => (
-                <UnstyledButton
-                  key={c}
-                  onClick={() => toggleColor(c)}
-                  style={{
+                  <UnstyledButton
+                    key={c}
+                    onClick={() => toggleColor(c)}
+                    aria-label={`Toggle color ${c === 'C' ? 'Colorless' : c === 'W' ? 'White' : c === 'U' ? 'Blue' : c === 'B' ? 'Black' : c === 'R' ? 'Red' : 'Green'}`}
+                    aria-pressed={colors.includes(c)}
+                    style={{
                     width: 30,
                     height: 30,
                     borderRadius: '50%',
                     border: colors.includes(c)
-                      ? '2px solid var(--mantine-color-violet-6)'
+                      ? '2px solid var(--mantine-color-brand-6)'
                       : '2px solid var(--mantine-color-gray-4)',
                     background: colors.includes(c)
-                      ? 'var(--mantine-color-violet-0)'
+                      ? 'var(--mantine-color-brand-0)'
                       : 'transparent',
                     cursor: 'pointer',
                     display: 'inline-flex',
@@ -332,6 +336,7 @@ export default function DashboardPage() {
         <Grid.Col span={{ base: 12, sm: 9 }}>
           <TextInput
             placeholder="Search cards by name..."
+            aria-label="Search cards by name"
             leftSection={<IconSearch size={16} />}
             value={search}
             onChange={(e) => { setSearch(e.currentTarget.value); setPage(1); }}

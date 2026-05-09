@@ -5,9 +5,9 @@ import {
   Container, TextInput, Group, Text, Center,
   Pagination, Loader, SegmentedControl, MultiSelect,
   RangeSlider, UnstyledButton, Divider, Checkbox, Paper, Grid,
-  Button, Title, Modal, Stack, Alert, Progress,
+  Button, Title, Modal, Stack, Alert, Progress, Skeleton, ActionIcon,
 } from '@mantine/core';
-import { IconSearch, IconGridDots, IconList, IconUpload, IconAlertCircle, IconCheck, IconLink } from '@tabler/icons-react';
+import { IconSearch, IconGridDots, IconList, IconUpload, IconAlertCircle, IconCheck, IconLink, IconPencil } from '@tabler/icons-react';
 import { useAuth } from '@/lib/auth';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
@@ -66,6 +66,11 @@ export default function CollectionPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [importProgress, setImportProgress] = useState(0);
   const [isPublic, setIsPublic] = useState(false);
+  const [displayName, setDisplayName] = useState('');
+  const [displayNameSaving, setDisplayNameSaving] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [backgroundLoading, setBackgroundLoading] = useState(false);
+  const [loadProgress, setLoadProgress] = useState({ loaded: 0, total: 0 });
 
   const toggleColor = (color: string) => {
     setColors((prev) => prev.includes(color) ? prev.filter((c) => c !== color) : [...prev, color]);
@@ -104,13 +109,14 @@ export default function CollectionPage() {
     if (!user) return;
     supabase
       .from('collections')
-      .select('id, is_public')
+      .select('id, is_public, display_name')
       .eq('user_id', user.id)
       .limit(1)
       .then(({ data }) => {
         if (data && data.length > 0) {
           setCollectionId(data[0].id);
           setIsPublic(data[0].is_public);
+          if (data[0].display_name) setDisplayName(data[0].display_name);
         } else {
           supabase
             .from('collections')
@@ -167,87 +173,100 @@ export default function CollectionPage() {
       try {
         const currentKey = `${collectionId}-${refreshKey}`;
 
-        if (!cardCacheRef.current || cardCacheRef.current.key !== currentKey) {
-          const { count: ccCount, error: countErr } = await supabase
-            .from('collection_cards')
-            .select('*', { count: 'exact', head: true })
-            .eq('collection_id', collectionId);
+        if (cardCacheRef.current && cardCacheRef.current.key === currentKey) {
+          let filtered = cardCacheRef.current.data.filter(filterCard);
+          const grouped = groupCardsByName(filtered);
 
-          const allCollectionCards: any[] = [];
-          if (!countErr && ccCount && ccCount > 0) {
-            const pageSize = 1000;
-            const totalPages = Math.ceil(ccCount / pageSize);
-            const pagePromises = [];
-            for (let p = 0; p < totalPages; p++) {
-              pagePromises.push(
-                supabase
-                  .from('collection_cards')
-                  .select('card_id, quantity, foil, condition')
-                  .eq('collection_id', collectionId)
-                  .range(p * pageSize, (p + 1) * pageSize - 1)
-              );
-            }
-            const pageResults = await Promise.all(pagePromises);
-            for (const { data, error } of pageResults) {
-              if (error) {
-                console.error('Error fetching collection cards:', error);
-                setFetching(false);
-                return;
-              }
-              if (data) allCollectionCards.push(...data);
-            }
+          let result = grouped;
+          if (quantityFilter != null) {
+            result = grouped.filter((g) => {
+              const total = g.printings.reduce((sum, p) => sum + (p.quantity || 0), 0);
+              return quantityFilter === 4 ? total >= 4 : total === quantityFilter;
+            });
           }
 
-          const allCardIds = [...new Set(allCollectionCards.map((cc: any) => cc.card_id))];
-          if (allCardIds.length === 0) {
-            setGroupedCards([]);
-            setTotalCount(0);
-            setFetching(false);
-            return;
-          }
-
-          const chunkSize = 200;
-          const chunks: string[][] = [];
-          for (let i = 0; i < allCardIds.length; i += chunkSize) {
-            chunks.push(allCardIds.slice(i, i + chunkSize));
-          }
-
-          const allCardsData: any[] = [];
-          const CONCURRENT = 5;
-          for (let i = 0; i < chunks.length; i += CONCURRENT) {
-            const batch = chunks.slice(i, i + CONCURRENT).map((chunk) =>
-              supabase.from('cards').select('*').in('id', chunk)
+          if (sort.column === 'cmc') {
+            result.sort((a: any, b: any) =>
+              sort.direction === 'asc' ? (a.cmc || 0) - (b.cmc || 0) : (b.cmc || 0) - (a.cmc || 0)
             );
-            const results = await Promise.all(batch.map((q) => q));
-            for (const { data, error } of results) {
-              if (error) {
-                console.error('Error fetching card chunk:', error);
-                setFetching(false);
-                return;
-              }
-              if (data) allCardsData.push(...data);
-            }
+          } else {
+            result.sort((a, b) =>
+              sort.direction === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
+            );
           }
 
-          const cardMap = new Map(allCardsData.map((c: any) => [c.id, c]));
+          const totalCount = result.length;
+          const groupFrom = (page - 1) * DISPLAY_PER_PAGE;
+          const paged = result.slice(groupFrom, groupFrom + DISPLAY_PER_PAGE);
 
-          const aggMap = new Map<string, { totalQty: number; hasFoil: boolean; conditions: Set<string> }>();
-          for (const cc of allCollectionCards) {
+          setGroupedCards(paged);
+          setTotalCount(totalCount);
+          setFetching(false);
+          return;
+        }
+
+        const { count: ccCount, error: countErr } = await supabase
+          .from('collection_cards')
+          .select('*', { count: 'exact', head: true })
+          .eq('collection_id', collectionId);
+
+        const allCollectionCards: any[] = [];
+        if (!countErr && ccCount && ccCount > 0) {
+          const pageSize = 1000;
+          const totalPages = Math.ceil(ccCount / pageSize);
+          const pagePromises = [];
+          for (let p = 0; p < totalPages; p++) {
+            pagePromises.push(
+              supabase
+                .from('collection_cards')
+                .select('card_id, quantity, foil, condition')
+                .eq('collection_id', collectionId)
+                .range(p * pageSize, (p + 1) * pageSize - 1)
+            );
+          }
+          const pageResults = await Promise.all(pagePromises);
+          for (const { data, error } of pageResults) {
+            if (error) {
+              console.error('Error fetching collection cards:', error);
+              setFetching(false);
+              return;
+            }
+            if (data) allCollectionCards.push(...data);
+          }
+        }
+
+        const allCardIds = [...new Set(allCollectionCards.map((cc: any) => cc.card_id))];
+        if (allCardIds.length === 0) {
+          setGroupedCards([]);
+          setTotalCount(0);
+          setFetching(false);
+          return;
+        }
+
+        const chunkSize = 200;
+        const chunks: string[][] = [];
+        for (let i = 0; i < allCardIds.length; i += chunkSize) {
+          chunks.push(allCardIds.slice(i, i + chunkSize));
+        }
+
+        const allCardsData: any[] = [];
+        const CONCURRENT = 10;
+
+        const CARD_COLUMNS = 'id, name, rarity, set, set_name, type_line, mana_cost, cmc, image_uris, colors, prices, purchase_uris, set_type, layout';
+
+        const joinAndRender = async (cardData: any[], collectionCards: any[], pageNum: number, fromCache: boolean) => {
+          const cardMap = new Map(cardData.map((c: any) => [c.id, c]));
+          const aggMap = new Map<string, { totalQty: number; hasFoil: boolean }>();
+          for (const cc of collectionCards) {
             if (!cardMap.has(cc.card_id)) continue;
             const existing = aggMap.get(cc.card_id);
             if (existing) {
               existing.totalQty += cc.quantity;
               if (cc.foil !== 'normal') existing.hasFoil = true;
-              existing.conditions.add(cc.condition);
             } else {
-              aggMap.set(cc.card_id, {
-                totalQty: cc.quantity,
-                hasFoil: cc.foil !== 'normal',
-                conditions: new Set([cc.condition]),
-              });
+              aggMap.set(cc.card_id, { totalQty: cc.quantity, hasFoil: cc.foil !== 'normal' });
             }
           }
-
           const joined: ScryfallCard[] = [];
           for (const [cardId, agg] of aggMap) {
             const card = cardMap.get(cardId)!;
@@ -258,37 +277,97 @@ export default function CollectionPage() {
             });
           }
 
-          const missingMana = joined.filter((c) => !c.mana_cost);
-          if (missingMana.length > 0) {
-            try {
-              for (let i = 0; i < missingMana.length; i += 75) {
-                const batch = missingMana.slice(i, i + 75);
-                const res = await fetch('https://api.scryfall.com/cards/collection', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    identifiers: batch.map((c) => ({ id: c.id })),
-                  }),
-                });
-                const scryfall = await res.json();
-                for (const scryfallCard of scryfall.data || []) {
-                  const card = joined.find((c) => c.id === scryfallCard.id);
-                  if (card && scryfallCard.card_faces?.[0]?.mana_cost) {
-                    card.mana_cost = scryfallCard.card_faces[0].mana_cost;
+          if (fromCache) {
+            const missingMana = joined.filter((c: ScryfallCard) => !c.mana_cost);
+            if (missingMana.length > 0) {
+              try {
+                for (let i = 0; i < missingMana.length; i += 75) {
+                  const batch = missingMana.slice(i, i + 75);
+                  const res = await fetch('https://api.scryfall.com/cards/collection', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      identifiers: batch.map((c: ScryfallCard) => ({ id: c.id })),
+                    }),
+                  });
+                  const scryfall = await res.json();
+                  for (const scryfallCard of scryfall.data || []) {
+                    const card = joined.find((c: ScryfallCard) => c.id === scryfallCard.id);
+                    if (card && scryfallCard.card_faces?.[0]?.mana_cost) {
+                      card.mana_cost = scryfallCard.card_faces[0].mana_cost;
+                    }
                   }
                 }
+              } catch (e) {
+                console.warn('Failed to fetch DFC mana costs:', e);
               }
-            } catch (e) {
-              console.warn('Failed to fetch DFC mana costs:', e);
             }
           }
 
-          cardCacheRef.current = { key: currentKey, data: joined };
+          let filtered = joined.filter(filterCard);
+          const grouped = groupCardsByName(filtered);
+
+          let result = grouped;
+          if (quantityFilter != null) {
+            result = grouped.filter((g) => {
+              const total = g.printings.reduce((sum, p) => sum + (p.quantity || 0), 0);
+              return quantityFilter === 4 ? total >= 4 : total === quantityFilter;
+            });
+          }
+
+          if (sort.column === 'cmc') {
+            result.sort((a: any, b: any) =>
+              sort.direction === 'asc' ? (a.cmc || 0) - (b.cmc || 0) : (b.cmc || 0) - (a.cmc || 0)
+            );
+          } else {
+            result.sort((a, b) =>
+              sort.direction === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
+            );
+          }
+
+          const totalCount = result.length;
+          const groupFrom = (pageNum - 1) * DISPLAY_PER_PAGE;
+          return { paged: result.slice(groupFrom, groupFrom + DISPLAY_PER_PAGE), totalCount, joined };
+        };
+
+        let initialPageShown = false;
+        for (let i = 0; i < chunks.length; i += CONCURRENT) {
+          const batch = chunks.slice(i, i + CONCURRENT);
+          const batchPromises = batch.map((chunk) =>
+            supabase.from('cards').select(CARD_COLUMNS).in('id', chunk)
+          );
+          const results = await Promise.all(batchPromises.map((q) => q));
+          for (const { data, error } of results) {
+            if (error) {
+              console.error('Error fetching card chunk:', error);
+              setFetching(false);
+              setBackgroundLoading(false);
+              return;
+            }
+            if (data) allCardsData.push(...data);
+          }
+
+          if (!initialPageShown && allCardsData.length >= 100) {
+            const { paged, totalCount: tc } = await joinAndRender(allCardsData, allCollectionCards, 1, false);
+            if (paged.length > 0) {
+              setGroupedCards(paged);
+              setTotalCount(tc);
+              initialPageShown = true;
+              setFetching(false);
+              setBackgroundLoading(true);
+              setLoadProgress({ loaded: allCardsData.length, total: allCardIds.length });
+            }
+          } else if (initialPageShown) {
+            setLoadProgress({ loaded: allCardsData.length, total: allCardIds.length });
+          }
         }
 
-        let filtered = cardCacheRef.current.data.filter(filterCard);
-        const grouped = groupCardsByName(filtered);
+        const { joined } = await joinAndRender(allCardsData, allCollectionCards, page, true);
+        cardCacheRef.current = { key: currentKey, data: joined };
+        setBackgroundLoading(false);
+        setLoadProgress({ loaded: 0, total: 0 });
 
+        const grouped = groupCardsByName(joined.filter(filterCard));
         let result = grouped;
         if (quantityFilter != null) {
           result = grouped.filter((g) => {
@@ -296,7 +375,6 @@ export default function CollectionPage() {
             return quantityFilter === 4 ? total >= 4 : total === quantityFilter;
           });
         }
-
         if (sort.column === 'cmc') {
           result.sort((a: any, b: any) =>
             sort.direction === 'asc' ? (a.cmc || 0) - (b.cmc || 0) : (b.cmc || 0) - (a.cmc || 0)
@@ -306,7 +384,6 @@ export default function CollectionPage() {
             sort.direction === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
           );
         }
-
         const totalCount = result.length;
         const groupFrom = (page - 1) * DISPLAY_PER_PAGE;
         const paged = result.slice(groupFrom, groupFrom + DISPLAY_PER_PAGE);
@@ -364,6 +441,17 @@ export default function CollectionPage() {
     navigator.clipboard.writeText(url);
   };
 
+  const handleSaveDisplayName = useCallback(async () => {
+    if (!collectionId) return;
+    setDisplayNameSaving(true);
+    await supabase
+      .from('collections')
+      .update({ display_name: displayName.trim() || null })
+      .eq('id', collectionId);
+    setDisplayNameSaving(false);
+    setEditingName(false);
+  }, [collectionId, displayName]);
+
   if (loading || !user) {
     return <Container size="lg" py={80}><Center><Loader size="xl" /></Center></Container>;
   }
@@ -373,7 +461,28 @@ export default function CollectionPage() {
   return (
     <Container size="xl" py="md">
       <Group justify="space-between" mb="md">
-        <Title order={2}>My Collection</Title>
+        <Group gap="xs">
+          {editingName ? (
+            <TextInput
+              value={displayName}
+              onChange={(e) => setDisplayName(e.currentTarget.value)}
+              size="md"
+              placeholder="Your display name"
+              maw={320}
+            />
+          ) : (
+            <Title order={2}>{displayName || 'My Collection'}</Title>
+          )}
+          {editingName ? (
+            <Button size="sm" variant="light" onClick={handleSaveDisplayName} loading={displayNameSaving}>
+              Save
+            </Button>
+          ) : (
+            <ActionIcon variant="subtle" color="gray" size="lg" onClick={() => setEditingName(true)}>
+              <IconPencil size={18} />
+            </ActionIcon>
+          )}
+        </Group>
         <Group gap="sm">
           <Checkbox
             label="Public"
@@ -476,119 +585,140 @@ export default function CollectionPage() {
       <Grid>
         <Grid.Col span={{ base: 12, sm: 3 }} style={{ paddingLeft: 0 }}>
           <Paper withBorder p="md" pos="sticky" top={16}>
-            <Text size="sm" fw={500} mb={4}>Set</Text>
-            <MultiSelect
-              placeholder="Set"
-              data={setOptions}
-              value={sets}
-              onChange={(v) => { setSets(v); setPage(1); }}
-              clearable
-              searchable
-              size="sm"
-              mb="md"
-              maxDropdownHeight={200}
-              renderOption={({ option }) => (
-                <Group gap={6}>
-                  <SetSymbol setCode={option.value} size={14} />
-                  <span>{option.label}</span>
+            {backgroundLoading ? (
+              <Stack gap="md">
+                <Skeleton height={18} width="20%" mb={2} />
+                <Skeleton height={36} radius="sm" />
+                <Skeleton height={18} width="28%" mb={2} />
+                <Skeleton height={36} radius="sm" />
+                <Skeleton height={18} width="24%" mb={2} />
+                <Group gap={4}>
+                  {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} width={30} height={30} radius="50%" />)}
                 </Group>
-              )}
-            />
+                <Skeleton height={18} width="18%" mb={2} />
+                <Skeleton height={36} radius="sm" />
+                <Skeleton height={18} width="22%" mb={2} />
+                <Skeleton height={36} radius="sm" />
+                <Skeleton height={18} width="32%" mb={2} />
+                <Skeleton height={36} radius="sm" />
+                <Divider />
+                <Skeleton height={20} width={100} radius="sm" />
+              </Stack>
+            ) : (<>
+              <Text size="sm" fw={500} mb={4}>Set</Text>
+              <MultiSelect
+                placeholder="Set"
+                data={setOptions}
+                value={sets}
+                onChange={(v) => { setSets(v); setPage(1); }}
+                clearable
+                searchable
+                size="sm"
+                mb="md"
+                maxDropdownHeight={200}
+                renderOption={({ option }) => (
+                  <Group gap={6}>
+                    <SetSymbol setCode={option.value} size={14} />
+                    <span>{option.label}</span>
+                  </Group>
+                )}
+              />
 
-            <Text size="sm" fw={500} mb={4}>Rarity</Text>
-            <MultiSelect
-              placeholder="Rarity"
-              data={['common', 'uncommon', 'rare', 'mythic', 'special'].map((r) => ({ value: r, label: r.charAt(0).toUpperCase() + r.slice(1) }))}
-              value={rarities}
-              onChange={(v) => { setRarities(v); setPage(1); }}
-              clearable
-              size="sm"
-              mb="md"
-              maxDropdownHeight={200}
-            />
+              <Text size="sm" fw={500} mb={4}>Rarity</Text>
+              <MultiSelect
+                placeholder="Rarity"
+                data={['common', 'uncommon', 'rare', 'mythic', 'special'].map((r) => ({ value: r, label: r.charAt(0).toUpperCase() + r.slice(1) }))}
+                value={rarities}
+                onChange={(v) => { setRarities(v); setPage(1); }}
+                clearable
+                size="sm"
+                mb="md"
+                maxDropdownHeight={200}
+              />
 
-            <Text size="sm" fw={500} mb={4}>Color</Text>
-            <Group gap={4} mb="md">
-              {COLOR_OPTIONS.map((c) => (
-                <UnstyledButton
-                  key={c}
-                  onClick={() => toggleColor(c)}
-                  style={{
-                    width: 30,
-                    height: 30,
-                    borderRadius: '50%',
-                    border: colors.includes(c)
-                      ? '2px solid var(--mantine-color-violet-6)'
-                      : '2px solid var(--mantine-color-gray-4)',
-                    background: colors.includes(c)
-                      ? 'var(--mantine-color-violet-0)'
-                      : 'transparent',
-                    cursor: 'pointer',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: 0,
-                    flexShrink: 0,
-                  }}
-                >
-                  <ManaIcon value={c} size={14} />
-                </UnstyledButton>
-              ))}
-            </Group>
+              <Text size="sm" fw={500} mb={4}>Color</Text>
+              <Group gap={4} mb="md">
+                {COLOR_OPTIONS.map((c) => (
+                  <UnstyledButton
+                    key={c}
+                    onClick={() => toggleColor(c)}
+                    style={{
+                      width: 30,
+                      height: 30,
+                      borderRadius: '50%',
+                      border: colors.includes(c)
+                        ? '2px solid var(--mantine-color-violet-6)'
+                        : '2px solid var(--mantine-color-gray-4)',
+                      background: colors.includes(c)
+                        ? 'var(--mantine-color-violet-0)'
+                        : 'transparent',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: 0,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <ManaIcon value={c} size={14} />
+                  </UnstyledButton>
+                ))}
+              </Group>
 
-            <Text size="sm" fw={500} mb={4}>CMC</Text>
-            <RangeSlider
-              min={0}
-              max={15}
-              step={1}
-              minRange={0}
-              value={cmcRange}
-              onChange={(v) => { setCmcRange(v); setPage(1); }}
-              marks={[
-                { value: 0, label: '0' },
-                { value: 5, label: '5' },
-                { value: 10, label: '10' },
-                { value: 15, label: '15' },
-              ]}
-              mb="md"
-            />
+              <Text size="sm" fw={500} mb={4}>CMC</Text>
+              <RangeSlider
+                min={0}
+                max={15}
+                step={1}
+                minRange={0}
+                value={cmcRange}
+                onChange={(v) => { setCmcRange(v); setPage(1); }}
+                marks={[
+                  { value: 0, label: '0' },
+                  { value: 5, label: '5' },
+                  { value: 10, label: '10' },
+                  { value: 15, label: '15' },
+                ]}
+                mb="md"
+              />
 
-            <Text size="sm" fw={500} mb={4}>Type</Text>
-            <MultiSelect
-              placeholder="Type"
-              data={CARD_TYPES}
-              value={types}
-              onChange={(v) => { setTypes(v); setPage(1); }}
-              clearable
-              size="sm"
-              mb="md"
-              maxDropdownHeight={200}
-            />
+              <Text size="sm" fw={500} mb={4}>Type</Text>
+              <MultiSelect
+                placeholder="Type"
+                data={CARD_TYPES}
+                value={types}
+                onChange={(v) => { setTypes(v); setPage(1); }}
+                clearable
+                size="sm"
+                mb="md"
+                maxDropdownHeight={200}
+              />
 
-            <Text size="sm" fw={500} mb={4}>Quantity</Text>
-            <SegmentedControl
-              value={String(quantityFilter ?? 'all')}
-              onChange={(v) => { setQuantityFilter(v === 'all' ? null : Number(v)); setPage(1); }}
-              data={[
-                { value: 'all', label: 'All' },
-                { value: '1', label: '1' },
-                { value: '2', label: '2' },
-                { value: '3', label: '3' },
-                { value: '4', label: '4+' },
-              ]}
-              size="xs"
-              fullWidth
-              mb="md"
-            />
+              <Text size="sm" fw={500} mb={4}>Quantity</Text>
+              <SegmentedControl
+                value={String(quantityFilter ?? 'all')}
+                onChange={(v) => { setQuantityFilter(v === 'all' ? null : Number(v)); setPage(1); }}
+                data={[
+                  { value: 'all', label: 'All' },
+                  { value: '1', label: '1' },
+                  { value: '2', label: '2' },
+                  { value: '3', label: '3' },
+                  { value: '4', label: '4+' },
+                ]}
+                size="xs"
+                fullWidth
+                mb="md"
+              />
 
-            <Divider mb="md" />
+              <Divider mb="md" />
 
-            <Checkbox
-              label="Include extras"
-              checked={includeExtras}
-              onChange={(e) => { setIncludeExtras(e.currentTarget.checked); setPage(1); }}
-              size="sm"
-            />
+              <Checkbox
+                label="Include extras"
+                checked={includeExtras}
+                onChange={(e) => { setIncludeExtras(e.currentTarget.checked); setPage(1); }}
+                size="sm"
+              />
+            </>)}
           </Paper>
         </Grid.Col>
 
@@ -601,7 +731,16 @@ export default function CollectionPage() {
             mb="md"
           />
           <Group justify="space-between" mb="md">
-            <Text c="dimmed" size="sm">{totalCount.toLocaleString()} cards in collection</Text>
+            <Group gap="xs">
+              <Text c="dimmed" size="sm">{totalCount.toLocaleString()} cards in collection</Text>
+              {backgroundLoading && (
+                <>
+                  <Text c="dimmed" size="sm">•</Text>
+                  <Progress value={loadProgress.total > 0 ? (loadProgress.loaded / loadProgress.total) * 100 : 0} size="sm" w={100} />
+                  <Text c="dimmed" size="xs">Loading collection</Text>
+                </>
+              )}
+            </Group>
             <SegmentedControl
               value={viewMode}
               onChange={(v) => setViewMode(v as ViewMode)}

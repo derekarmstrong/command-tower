@@ -4,12 +4,13 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Container, Title, Text, Group, Stack, Paper, TextInput,
   Button, Table, Badge, Alert, Grid, HoverCard, Image,
-  ScrollArea, Box, Loader, Combobox, useCombobox,
+  ScrollArea, Box, Loader, Combobox, useCombobox, Anchor, UnstyledButton,
 } from '@mantine/core';
 import {
-  IconSearch, IconAlertCircle, IconBulb, IconChevronDown, IconChevronRight,
+  IconSearch, IconAlertCircle, IconBulb, IconChevronDown, IconChevronRight, IconChevronUp,
 } from '@tabler/icons-react';
 import { useAuth } from '@/lib/auth';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
 import { normalizeCardName } from '@/lib/normalizeCardName';
 import { ManaSymbol } from '@/components/ManaSymbol';
@@ -32,6 +33,8 @@ interface MatchedCard {
   num_decks: number;
   mana_cost: string | null;
   type_line: string | null;
+  prices: Record<string, string | null> | null;
+  purchase_uris: Record<string, string> | null;
 }
 
 interface CategoryResult {
@@ -47,6 +50,8 @@ interface MissingCard {
   scryfall_id: string;
   synergy: number;
   num_decks: number;
+  prices: Record<string, string | null> | null;
+  purchase_uris: Record<string, string> | null;
 }
 
 interface RecommendationsResult {
@@ -78,6 +83,7 @@ function HoverableSetBadge({ set_code, set_name, scryfall_id }: { set_code: stri
 }
 
 function CardNameCell({ name, scryfallId }: { name: string; scryfallId: string }) {
+  const router = useRouter();
   const imageUrl = scryfallId
     ? `https://cards.scryfall.io/normal/front/${scryfallId.slice(0, 1)}/${scryfallId.slice(1, 2)}/${scryfallId}.jpg`
     : null;
@@ -85,7 +91,7 @@ function CardNameCell({ name, scryfallId }: { name: string; scryfallId: string }
   return (
     <HoverCard width={263} shadow="md" openDelay={200} closeDelay={0}>
       <HoverCard.Target>
-        <Text fw={500} style={{ cursor: 'pointer' }}>{name}</Text>
+        <Text fw={500} style={{ cursor: 'pointer' }} onClick={() => router.push(`/cards/${scryfallId}`)}>{name}</Text>
       </HoverCard.Target>
       <HoverCard.Dropdown p="xs">
         {imageUrl ? (
@@ -121,10 +127,10 @@ function filterCategories(categories: CategoryResult[], query: string): Category
 
 function CategorySection({ category, filterQuery }: { category: CategoryResult; filterQuery: string }) {
   const [expanded, setExpanded] = useState(false);
-  const [ownedSortBy, setOwnedSortBy] = useState('name');
-  const [ownedSortDir, setOwnedSortDir] = useState<'asc' | 'desc'>('asc');
-  const [missingSortBy, setMissingSortBy] = useState('name');
-  const [missingSortDir, setMissingSortDir] = useState<'asc' | 'desc'>('asc');
+  const [ownedSortBy, setOwnedSortBy] = useState('synergy');
+  const [ownedSortDir, setOwnedSortDir] = useState<'asc' | 'desc'>('desc');
+  const [missingSortBy, setMissingSortBy] = useState('synergy');
+  const [missingSortDir, setMissingSortDir] = useState<'asc' | 'desc'>('desc');
 
   const isFiltered = filterQuery.trim().length > 0;
 
@@ -171,27 +177,27 @@ function CategorySection({ category, filterQuery }: { category: CategoryResult; 
     return 0;
   });
 
-  const OwnedSortableTh = ({ column, children }: { column: string; children: React.ReactNode }) => (
-    <Table.Th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleOwnedSort(column)}>
-      <Group gap={4} wrap="nowrap">
-        {children}
-        {ownedSortBy === column && (
-          <Text size="xs" c="dimmed" fw={400}>{ownedSortDir === 'asc' ? '↑' : '↓'}</Text>
-        )}
-      </Group>
-    </Table.Th>
-  );
-
-  const MissingSortableTh = ({ column, children }: { column: string; children: React.ReactNode }) => (
-    <Table.Th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => handleMissingSort(column)}>
-      <Group gap={4} wrap="nowrap">
-        {children}
-        {missingSortBy === column && (
-          <Text size="xs" c="dimmed" fw={400}>{missingSortDir === 'asc' ? '↑' : '↓'}</Text>
-        )}
-      </Group>
-    </Table.Th>
-  );
+  const ThHeader = ({ column, children, sortBy, sortDir, onSort }: { column: string; children: React.ReactNode; sortBy: string; sortDir: 'asc' | 'desc'; onSort: (c: string) => void }) => {
+    const isActive = sortBy === column;
+    return (
+      <Table.Th>
+        <UnstyledButton
+          onClick={() => onSort(column)}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+            fontWeight: isActive ? 700 : 500,
+            color: 'inherit',
+            padding: 0,
+          }}
+        >
+          {children}
+          {isActive && (sortDir === 'asc' ? <IconChevronUp size={14} /> : <IconChevronDown size={14} />)}
+        </UnstyledButton>
+      </Table.Th>
+    );
+  };
 
   return (
     <Paper withBorder radius="md" key={category.tag}>
@@ -223,10 +229,12 @@ function CategorySection({ category, filterQuery }: { category: CategoryResult; 
                   <Table striped highlightOnHover>
                     <Table.Thead style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--mantine-color-body)' }}>
                       <Table.Tr>
-                        <OwnedSortableTh column="name">Card Name</OwnedSortableTh>
-                        <OwnedSortableTh column="synergy">Synergy</OwnedSortableTh>
+                        <ThHeader column="name" sortBy={ownedSortBy} sortDir={ownedSortDir} onSort={handleOwnedSort}>Card Name</ThHeader>
+                        <ThHeader column="synergy" sortBy={ownedSortBy} sortDir={ownedSortDir} onSort={handleOwnedSort}>Synergy</ThHeader>
                         <Table.Th>Mana</Table.Th>
-                        <OwnedSortableTh column="owned">Owned</OwnedSortableTh>
+                        <Table.Th>Price</Table.Th>
+                        <Table.Th>Buy</Table.Th>
+                        <ThHeader column="owned" sortBy={ownedSortBy} sortDir={ownedSortDir} onSort={handleOwnedSort}>Owned</ThHeader>
                         <Table.Th>Sets</Table.Th>
                       </Table.Tr>
                     </Table.Thead>
@@ -237,6 +245,22 @@ function CategorySection({ category, filterQuery }: { category: CategoryResult; 
                           <Table.Td>{(card.synergy * 100).toFixed(1)}%</Table.Td>
                           <Table.Td>
                             {card.mana_cost ? <ManaSymbol cost={card.mana_cost} size={14} /> : null}
+                          </Table.Td>
+                          <Table.Td>
+                            {card.prices?.usd ? (
+                              <Text size="sm" fw={600} c="green">${card.prices.usd}</Text>
+                            ) : card.prices?.usd_foil ? (
+                              <Text size="sm" c="dimmed">${card.prices.usd_foil}</Text>
+                            ) : (
+                              <Text c="dimmed" size="sm">—</Text>
+                            )}
+                          </Table.Td>
+                          <Table.Td>
+                            {card.purchase_uris?.tcgplayer && (
+                              <Anchor href={card.purchase_uris.tcgplayer} target="_blank" size="xs" onClick={(e) => e.stopPropagation()}>
+                                TCG
+                              </Anchor>
+                            )}
                           </Table.Td>
                           <Table.Td><Badge variant="light" color="green">{card.totalOwned}</Badge></Table.Td>
                           <Table.Td>
@@ -265,8 +289,10 @@ function CategorySection({ category, filterQuery }: { category: CategoryResult; 
                   <Table striped highlightOnHover>
                     <Table.Thead style={{ position: 'sticky', top: 0, zIndex: 1, background: 'var(--mantine-color-body)' }}>
                       <Table.Tr>
-                        <MissingSortableTh column="name">Card Name</MissingSortableTh>
-                        <MissingSortableTh column="synergy">Synergy</MissingSortableTh>
+                        <ThHeader column="name" sortBy={missingSortBy} sortDir={missingSortDir} onSort={handleMissingSort}>Card Name</ThHeader>
+                        <ThHeader column="synergy" sortBy={missingSortBy} sortDir={missingSortDir} onSort={handleMissingSort}>Synergy</ThHeader>
+                        <Table.Th>Price</Table.Th>
+                        <Table.Th>Buy</Table.Th>
                       </Table.Tr>
                     </Table.Thead>
                     <Table.Tbody>
@@ -276,6 +302,22 @@ function CategorySection({ category, filterQuery }: { category: CategoryResult; 
                             <CardNameCell name={card.name} scryfallId={card.scryfall_id} />
                           </Table.Td>
                           <Table.Td>{(card.synergy * 100).toFixed(1)}%</Table.Td>
+                          <Table.Td>
+                            {card.prices?.usd ? (
+                              <Text size="sm" fw={600} c="green">${card.prices.usd}</Text>
+                            ) : card.prices?.usd_foil ? (
+                              <Text size="sm" c="dimmed">${card.prices.usd_foil}</Text>
+                            ) : (
+                              <Text c="dimmed" size="sm">—</Text>
+                            )}
+                          </Table.Td>
+                          <Table.Td>
+                            {card.purchase_uris?.tcgplayer && (
+                              <Anchor href={card.purchase_uris.tcgplayer} target="_blank" size="xs" onClick={(e) => e.stopPropagation()}>
+                                TCG
+                              </Anchor>
+                            )}
+                          </Table.Td>
                         </Table.Tr>
                       ))}
                     </Table.Tbody>
@@ -362,29 +404,62 @@ export default function RecommendationsPage() {
       const collectionId = collections?.[0]?.id;
       if (!collectionId) throw new Error('No collection found. Import some cards first.');
 
-      const { data: ccData } = await supabase
+      const { count: ccCount } = await supabase
         .from('collection_cards')
-        .select('card_id, quantity, foil, condition')
+        .select('*', { count: 'exact', head: true })
         .eq('collection_id', collectionId);
+      if (!ccCount || ccCount === 0) throw new Error('No cards in your collection. Import some cards first.');
 
-      if (!ccData || ccData.length === 0) throw new Error('No cards in your collection. Import some cards first.');
+      const pageSize = 1000;
+      const totalPages = Math.ceil(ccCount / pageSize);
+      const pagePromises = [];
+      for (let p = 0; p < totalPages; p++) {
+        pagePromises.push(
+          supabase
+            .from('collection_cards')
+            .select('card_id, quantity, foil, condition')
+            .eq('collection_id', collectionId)
+            .range(p * pageSize, (p + 1) * pageSize - 1)
+        );
+      }
+      const pageResults = await Promise.all(pagePromises);
+      const allCcData: any[] = [];
+      for (const { data, error } of pageResults) {
+        if (error) throw error;
+        if (data) allCcData.push(...data);
+      }
 
-      const cardIds = [...new Set(ccData.map((c: any) => c.card_id))];
+      const cardIds = [...new Set(allCcData.map((c: any) => c.card_id))];
 
-      const { data: cardsData } = await supabase
-        .from('cards')
-        .select('id, name, mana_cost, type_line, set, set_name')
-        .in('id', cardIds);
+      const chunkSize = 200;
+      const cardIdChunks: string[][] = [];
+      for (let i = 0; i < cardIds.length; i += chunkSize) {
+        cardIdChunks.push(cardIds.slice(i, i + chunkSize));
+      }
+      const cardsPromises = cardIdChunks.map((chunk) =>
+        supabase
+          .from('cards')
+          .select('id, name, mana_cost, type_line, set, set_name, prices, purchase_uris')
+          .in('id', chunk)
+      );
+      const cardsResults = await Promise.all(cardsPromises);
+      const allCardsData: any[] = [];
+      for (const { data, error } of cardsResults) {
+        if (error) throw error;
+        if (data) allCardsData.push(...data);
+      }
+
+      if (allCardsData.length === 0) throw new Error('No cards matched your collection. Import some cards first.');
 
       const ownedMap = new Map<string, any[]>();
       const scryfallMap = new Map<string, any>();
-      for (const card of cardsData || []) {
+      for (const card of allCardsData || []) {
         scryfallMap.set(card.id, card);
         const normalized = normalizeCardName(card.name);
         if (!ownedMap.has(normalized)) ownedMap.set(normalized, []);
       }
 
-      for (const cc of ccData) {
+      for (const cc of allCcData) {
         const card = scryfallMap.get(cc.card_id);
         if (card) {
           const normalized = normalizeCardName(card.name);
@@ -432,6 +507,8 @@ export default function RecommendationsPage() {
               num_decks: recCard.num_decks,
               mana_cost: sc?.mana_cost || null,
               type_line: sc?.type_line || null,
+              prices: sc?.prices || null,
+              purchase_uris: sc?.purchase_uris || null,
             });
           } else {
             missingCards.push({
@@ -439,6 +516,8 @@ export default function RecommendationsPage() {
               scryfall_id: '',
               synergy: recCard.synergy,
               num_decks: recCard.num_decks,
+              prices: null,
+              purchase_uris: null,
             });
             allMissingNames.push(recCard.name);
           }
@@ -455,29 +534,45 @@ export default function RecommendationsPage() {
 
       const uniqueMissing = [...new Set(allMissingNames)];
       if (uniqueMissing.length > 0) {
-        const missingNameMap = new Map<string, string>();
-        const chunkSize = 50;
+        const missingCardMap = new Map<string, { id: string; prices: Record<string, string | null> | null; purchase_uris: Record<string, string> | null }>();
+        const chunkSize = 75;
         for (let i = 0; i < uniqueMissing.length; i += chunkSize) {
           const chunk = uniqueMissing.slice(i, i + chunkSize);
-          const { data: missingCards } = await supabase
-            .from('cards')
-            .select('id, name')
-            .eq('lang', 'en')
-            .in('name', chunk);
-          if (missingCards) {
-            for (const c of missingCards) {
-              const key = normalizeCardName(c.name);
-              if (!missingNameMap.has(key)) {
-                missingNameMap.set(key, c.id);
+          try {
+            const res = await fetch('https://api.scryfall.com/cards/collection', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                identifiers: chunk.map((name) => ({ name })),
+              }),
+            });
+            if (!res.ok) continue;
+            const body = await res.json();
+            if (body.data) {
+              for (const c of body.data) {
+                const key = normalizeCardName(c.name);
+                if (!missingCardMap.has(key)) {
+                  missingCardMap.set(key, {
+                    id: c.id,
+                    prices: c.prices || null,
+                    purchase_uris: c.purchase_uris || null,
+                  });
+                }
               }
             }
+          } catch {
+            // fall through — missing cards keep their default empty values
           }
         }
         for (const cat of results) {
           for (const mc of cat.missingCards) {
             const key = normalizeCardName(mc.name);
-            const id = missingNameMap.get(key);
-            if (id) mc.scryfall_id = id;
+            const entry = missingCardMap.get(key);
+            if (entry) {
+              mc.scryfall_id = entry.id;
+              mc.prices = entry.prices;
+              mc.purchase_uris = entry.purchase_uris;
+            }
           }
         }
       }

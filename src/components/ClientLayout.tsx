@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { AppShell, Group, Text, Button, ActionIcon, useMantineColorScheme, Burger, Stack } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { IconCards, IconSun, IconMoon, IconLogin, IconUserPlus, IconDashboard, IconSettings, IconLogout, IconArchive, IconBulb } from '@tabler/icons-react';
+import { IconCards, IconSun, IconMoon, IconLogin, IconUserPlus, IconDashboard, IconSettings, IconLogout, IconArchive, IconBulb, IconWorld } from '@tabler/icons-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
@@ -49,7 +49,8 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
               {hydrated && !loading && user ? (
                 <>
                   <Button component={Link} href="/dashboard" variant="subtle" leftSection={<IconDashboard size={16} />}>All Cards</Button>
-                  <Button component={Link} href="/collection" variant="subtle" leftSection={<IconArchive size={16} />}>Collection</Button>
+                  <Button component={Link} href="/collection" variant="subtle" leftSection={<IconArchive size={16} />}>My Collection</Button>
+                  <Button component={Link} href="/collections" variant="subtle" leftSection={<IconWorld size={16} />}>Browse Collections</Button>
                   <Button component={Link} href="/recommendations" variant="subtle" leftSection={<IconBulb size={16} />}>Recommendations</Button>
                   <Button component={Link} href="/settings" variant="subtle" leftSection={<IconSettings size={16} />}>Settings</Button>
                   <Button variant="subtle" color="gray" onClick={handleSignOut} leftSection={<IconLogout size={16} />}>Sign Out</Button>
@@ -73,7 +74,8 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
             {hydrated && !loading && user ? (
               <>
                   <Button component={Link} href="/dashboard" variant="subtle" justify="flex-start" leftSection={<IconDashboard size={16} />} onClick={toggle}>All Cards</Button>
-                <Button component={Link} href="/collection" variant="subtle" justify="flex-start" leftSection={<IconArchive size={16} />} onClick={toggle}>Collection</Button>
+                <Button component={Link} href="/collection" variant="subtle" justify="flex-start" leftSection={<IconArchive size={16} />} onClick={toggle}>My Collection</Button>
+                <Button component={Link} href="/collections" variant="subtle" justify="flex-start" leftSection={<IconWorld size={16} />} onClick={toggle}>Browse Collections</Button>
                 <Button component={Link} href="/recommendations" variant="subtle" justify="flex-start" leftSection={<IconBulb size={16} />} onClick={toggle}>Recommendations</Button>
                 <Button component={Link} href="/settings" variant="subtle" justify="flex-start" leftSection={<IconSettings size={16} />} onClick={toggle}>Settings</Button>
                 <Button variant="subtle" color="gray" justify="flex-start" leftSection={<IconLogout size={16} />} onClick={() => { toggle(); handleSignOut(); }}>Sign Out</Button>

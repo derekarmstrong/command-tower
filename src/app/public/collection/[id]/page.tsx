@@ -5,7 +5,7 @@ import {
   Container, Text, Center, Loader, Group, SegmentedControl,
   TextInput, Title, SimpleGrid, Skeleton, Alert, MultiSelect,
   RangeSlider, UnstyledButton, Divider, Checkbox, Paper, Grid,
-  Pagination, Stack,
+  Pagination, Stack, Progress,
 } from '@mantine/core';
 import { IconSearch, IconGridDots, IconList, IconAlertCircle } from '@tabler/icons-react';
 import { supabase } from '@/lib/supabase';
@@ -32,7 +32,7 @@ function ManaIcon({ value, size = 16 }: { value: string; size?: number }) {
 }
 
 export default function PublicCollectionPage({ params }: { params: { id: string } }) {
-  const [collection, setCollection] = useState<{ name: string; user_id: string } | null>(null);
+  const [collection, setCollection] = useState<{ name: string; user_id: string; display_name: string | null } | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [loading, setLoading] = useState(true);
   const [cardsLoading, setCardsLoading] = useState(true);
@@ -50,6 +50,8 @@ export default function PublicCollectionPage({ params }: { params: { id: string 
   const [sort, setSort] = useState<SortConfig>({ column: 'name', direction: 'asc' });
   const [includeExtras, setIncludeExtras] = useState(false);
   const [quantityFilter, setQuantityFilter] = useState<number | null>(null);
+  const [backgroundLoading, setBackgroundLoading] = useState(false);
+  const [loadProgress, setLoadProgress] = useState({ loaded: 0, total: 0 });
   const cardCacheRef = useRef<{ key: string; data: ScryfallCard[] } | null>(null);
 
   const toggleColor = (color: string) => {
@@ -60,7 +62,7 @@ export default function PublicCollectionPage({ params }: { params: { id: string 
   useEffect(() => {
     supabase
       .from('collections')
-      .select('name, user_id')
+      .select('name, user_id, display_name')
       .eq('id', params.id)
       .eq('is_public', true)
       .limit(1)
@@ -124,72 +126,89 @@ export default function PublicCollectionPage({ params }: { params: { id: string 
     if (!collection) return;
 
     setCardsLoading(true);
+    setBackgroundLoading(false);
 
     const fetchCards = async () => {
       const currentKey = params.id;
-      if (!cardCacheRef.current || cardCacheRef.current.key !== currentKey) {
-        const { count: ccCount, error: countErr } = await supabase
-          .from('collection_cards')
-          .select('*', { count: 'exact', head: true })
-          .eq('collection_id', params.id);
-
-        const allCcData: any[] = [];
-        if (!countErr && ccCount && ccCount > 0) {
-          const pageSize = 1000;
-          const totalPages = Math.ceil(ccCount / pageSize);
-          const pagePromises = [];
-          for (let p = 0; p < totalPages; p++) {
-            pagePromises.push(
-              supabase
-                .from('collection_cards')
-                .select('card_id, quantity, foil, condition')
-                .eq('collection_id', params.id)
-                .range(p * pageSize, (p + 1) * pageSize - 1)
-            );
-          }
-          const pageResults = await Promise.all(pagePromises);
-          for (const { data, error } of pageResults) {
-            if (error) {
-              console.error('Error fetching public collection cards:', error);
-              setCardsLoading(false);
-              return;
-            }
-            if (data) allCcData.push(...data);
-          }
+      if (cardCacheRef.current && cardCacheRef.current.key === currentKey) {
+        const joined = cardCacheRef.current.data;
+        let filtered = joined.filter(filterCard);
+        const grouped = groupCardsByName(filtered);
+        let result = grouped;
+        if (quantityFilter != null) {
+          result = grouped.filter((g) => {
+            const total = g.printings.reduce((sum, p) => sum + (p.quantity || 0), 0);
+            return quantityFilter === 4 ? total >= 4 : total === quantityFilter;
+          });
         }
-
-        const allCardIds = [...new Set(allCcData.map((c: any) => c.card_id))];
-        if (allCardIds.length === 0) {
-          setCardsLoading(false);
-          return;
-        }
-
-        const allCardsData: any[] = [];
-        const chunkSize = 200;
-        const chunks: string[][] = [];
-        for (let i = 0; i < allCardIds.length; i += chunkSize) {
-          chunks.push(allCardIds.slice(i, i + chunkSize));
-        }
-        const CONCURRENT = 5;
-        for (let i = 0; i < chunks.length; i += CONCURRENT) {
-          const batch = chunks.slice(i, i + CONCURRENT).map((chunk) =>
-            supabase.from('cards').select('*').in('id', chunk)
+        if (sort.column === 'cmc') {
+          result.sort((a, b) =>
+            sort.direction === 'asc' ? (a.cmc || 0) - (b.cmc || 0) : (b.cmc || 0) - (a.cmc || 0)
           );
-          const results = await Promise.all(batch.map((q) => q));
-          for (const { data, error } of results) {
-            if (error) {
-              console.error('Error fetching card chunk:', error);
-              setCardsLoading(false);
-              return;
-            }
-            if (data) allCardsData.push(...data);
-          }
+        } else {
+          result.sort((a, b) =>
+            sort.direction === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
+          );
         }
+        const totalCount = result.length;
+        const groupFrom = (page - 1) * DISPLAY_PER_PAGE;
+        const paged = result.slice(groupFrom, groupFrom + DISPLAY_PER_PAGE);
+        setGroupedCards(paged);
+        setTotalCount(totalCount);
+        setCardsLoading(false);
+        return;
+      }
 
-        const cardMap = new Map(allCardsData.map((c: any) => [c.id, c]));
+      const { count: ccCount, error: countErr } = await supabase
+        .from('collection_cards')
+        .select('*', { count: 'exact', head: true })
+        .eq('collection_id', params.id);
 
+      const allCcData: any[] = [];
+      if (!countErr && ccCount && ccCount > 0) {
+        const pageSize = 1000;
+        const totalPages = Math.ceil(ccCount / pageSize);
+        const pagePromises = [];
+        for (let p = 0; p < totalPages; p++) {
+          pagePromises.push(
+            supabase
+              .from('collection_cards')
+              .select('card_id, quantity, foil, condition')
+              .eq('collection_id', params.id)
+              .range(p * pageSize, (p + 1) * pageSize - 1)
+          );
+        }
+        const pageResults = await Promise.all(pagePromises);
+        for (const { data, error } of pageResults) {
+          if (error) {
+            console.error('Error fetching public collection cards:', error);
+            setCardsLoading(false);
+            return;
+          }
+          if (data) allCcData.push(...data);
+        }
+      }
+
+      const allCardIds = [...new Set(allCcData.map((cc: any) => cc.card_id))];
+      if (allCardIds.length === 0) {
+        setCardsLoading(false);
+        return;
+      }
+
+      const chunkSize = 200;
+      const chunks: string[][] = [];
+      for (let i = 0; i < allCardIds.length; i += chunkSize) {
+        chunks.push(allCardIds.slice(i, i + chunkSize));
+      }
+
+      const allCardsData: any[] = [];
+      const CONCURRENT = 10;
+      const CARD_COLUMNS = 'id, name, rarity, set, set_name, type_line, mana_cost, cmc, image_uris, colors, prices, purchase_uris, set_type, layout';
+
+      const joinAndRender = (cardData: any[], collectionCards: any[], pageNum: number) => {
+        const cardMap = new Map(cardData.map((c: any) => [c.id, c]));
         const aggMap = new Map<string, { totalQty: number; hasFoil: boolean }>();
-        for (const cc of allCcData) {
+        for (const cc of collectionCards) {
           if (!cardMap.has(cc.card_id)) continue;
           const existing = aggMap.get(cc.card_id);
           if (existing) {
@@ -199,20 +218,76 @@ export default function PublicCollectionPage({ params }: { params: { id: string 
             aggMap.set(cc.card_id, { totalQty: cc.quantity, hasFoil: cc.foil !== 'normal' });
           }
         }
+        const joined: ScryfallCard[] = [];
+        for (const [cardId, agg] of aggMap) {
+          const card = cardMap.get(cardId)!;
+          joined.push({
+            ...card,
+            collection_quantity: agg.totalQty,
+            collection_foil: agg.hasFoil ? 'foil' : 'normal',
+          });
+        }
+        let filtered = joined.filter(filterCard);
+        const grouped = groupCardsByName(filtered);
+        let result = grouped;
+        if (quantityFilter != null) {
+          result = grouped.filter((g) => {
+            const total = g.printings.reduce((sum, p) => sum + (p.quantity || 0), 0);
+            return quantityFilter === 4 ? total >= 4 : total === quantityFilter;
+          });
+        }
+        if (sort.column === 'cmc') {
+          result.sort((a: any, b: any) =>
+            sort.direction === 'asc' ? (a.cmc || 0) - (b.cmc || 0) : (b.cmc || 0) - (a.cmc || 0)
+          );
+        } else {
+          result.sort((a, b) =>
+            sort.direction === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
+          );
+        }
+        const totalCount = result.length;
+        const groupFrom = (pageNum - 1) * DISPLAY_PER_PAGE;
+        return { paged: result.slice(groupFrom, groupFrom + DISPLAY_PER_PAGE), totalCount, joined };
+      };
 
-        const joined = [...aggMap.entries()].map(([cardId, agg]) => ({
-          ...cardMap.get(cardId)!,
-          collection_quantity: agg.totalQty,
-          collection_foil: agg.hasFoil ? 'foil' : 'normal',
-        }));
+      let initialPageShown = false;
+      for (let i = 0; i < chunks.length; i += CONCURRENT) {
+        const batch = chunks.slice(i, i + CONCURRENT);
+        const batchPromises = batch.map((chunk) =>
+          supabase.from('cards').select(CARD_COLUMNS).in('id', chunk)
+        );
+        const results = await Promise.all(batchPromises.map((q) => q));
+        for (const { data, error } of results) {
+          if (error) {
+            console.error('Error fetching card chunk:', error);
+            setCardsLoading(false);
+            setBackgroundLoading(false);
+            return;
+          }
+          if (data) allCardsData.push(...data);
+        }
 
-        cardCacheRef.current = { key: currentKey, data: joined };
+        if (!initialPageShown && allCardsData.length >= 100) {
+          const { paged, totalCount: tc } = joinAndRender(allCardsData, allCcData, 1);
+          if (paged.length > 0) {
+            setGroupedCards(paged);
+            setTotalCount(tc);
+            initialPageShown = true;
+            setCardsLoading(false);
+            setBackgroundLoading(true);
+            setLoadProgress({ loaded: allCardsData.length, total: allCardIds.length });
+          }
+        } else if (initialPageShown) {
+          setLoadProgress({ loaded: allCardsData.length, total: allCardIds.length });
+        }
       }
 
-      let filtered = cardCacheRef.current.data.filter(filterCard);
+      const { joined } = joinAndRender(allCardsData, allCcData, page);
+      cardCacheRef.current = { key: currentKey, data: joined };
+      setBackgroundLoading(false);
+      setLoadProgress({ loaded: 0, total: 0 });
 
-      const grouped = groupCardsByName(filtered);
-
+      const grouped = groupCardsByName(joined.filter(filterCard));
       let result = grouped;
       if (quantityFilter != null) {
         result = grouped.filter((g) => {
@@ -220,9 +295,8 @@ export default function PublicCollectionPage({ params }: { params: { id: string 
           return quantityFilter === 4 ? total >= 4 : total === quantityFilter;
         });
       }
-
       if (sort.column === 'cmc') {
-        result.sort((a, b) =>
+        result.sort((a: any, b: any) =>
           sort.direction === 'asc' ? (a.cmc || 0) - (b.cmc || 0) : (b.cmc || 0) - (a.cmc || 0)
         );
       } else {
@@ -230,14 +304,12 @@ export default function PublicCollectionPage({ params }: { params: { id: string 
           sort.direction === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
         );
       }
-
       const totalCount = result.length;
       const groupFrom = (page - 1) * DISPLAY_PER_PAGE;
       const paged = result.slice(groupFrom, groupFrom + DISPLAY_PER_PAGE);
 
       setGroupedCards(paged);
       setTotalCount(totalCount);
-      setCardsLoading(false);
     };
 
     fetchCards();
@@ -272,12 +344,32 @@ export default function PublicCollectionPage({ params }: { params: { id: string 
 
   return (
     <Container size="xl" py="md">
-      <Title order={2} mb="md">{collection?.name || 'Collection'}</Title>
+      <Title order={2} mb="md">{collection?.display_name || collection?.name || 'Collection'}</Title>
 
       <Grid>
         <Grid.Col span={{ base: 12, sm: 3 }} style={{ paddingLeft: 0 }}>
           <Paper withBorder p="md" pos="sticky" top={16}>
-            <Text size="sm" fw={500} mb={4}>Set</Text>
+            {backgroundLoading ? (
+              <Stack gap="md">
+                <Skeleton height={18} width="20%" mb={2} />
+                <Skeleton height={36} radius="sm" />
+                <Skeleton height={18} width="28%" mb={2} />
+                <Skeleton height={36} radius="sm" />
+                <Skeleton height={18} width="24%" mb={2} />
+                <Group gap={4}>
+                  {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} width={30} height={30} radius="50%" />)}
+                </Group>
+                <Skeleton height={18} width="18%" mb={2} />
+                <Skeleton height={36} radius="sm" />
+                <Skeleton height={18} width="22%" mb={2} />
+                <Skeleton height={36} radius="sm" />
+                <Skeleton height={18} width="32%" mb={2} />
+                <Skeleton height={36} radius="sm" />
+                <Divider />
+                <Skeleton height={20} width={100} radius="sm" />
+              </Stack>
+            ) : (<>
+              <Text size="sm" fw={500} mb={4}>Set</Text>
             <MultiSelect
               placeholder="Set"
               data={setOptions}
@@ -361,6 +453,7 @@ export default function PublicCollectionPage({ params }: { params: { id: string 
               onChange={(e) => { setIncludeExtras(e.currentTarget.checked); setPage(1); }}
               size="sm"
             />
+            </>)}
           </Paper>
         </Grid.Col>
 
@@ -373,7 +466,16 @@ export default function PublicCollectionPage({ params }: { params: { id: string 
             mb="md"
           />
           <Group justify="space-between" mb="md">
-            <Text c="dimmed" size="sm">{totalCount.toLocaleString()} cards</Text>
+            <Group gap="xs">
+              <Text c="dimmed" size="sm">{totalCount.toLocaleString()} cards</Text>
+              {backgroundLoading && (
+                <>
+                  <Text c="dimmed" size="sm">•</Text>
+                  <Progress value={loadProgress.total > 0 ? (loadProgress.loaded / loadProgress.total) * 100 : 0} size="sm" w={100} />
+                  <Text c="dimmed" size="xs">Loading collection</Text>
+                </>
+              )}
+            </Group>
             <SegmentedControl
               value={viewMode}
               onChange={(v) => setViewMode(v as ViewMode)}
